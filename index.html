@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Checklist Asbemge</title>
+<title>Checklist Asbemge (teste)</title>
 <meta name="robots" content="noindex">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -370,12 +370,12 @@ img{max-width:100%}
     var t = document.createElement("strong"); t.textContent = "O sistema não conseguiu carregar."; box.appendChild(t);
     var m = document.createElement("span"); m.textContent = motivo; box.appendChild(m);
     var d = document.createElement("span");
-    d.textContent = "Verifique a conexão com a internet e recarregue a página (Ctrl + F5).";
+    d.textContent = "Recarregue a página (Ctrl + F5).";
     box.appendChild(d);
   }
   window.addEventListener("error", function (e) {
     var alvo = e.target;
-    if (alvo && alvo !== window && alvo.tagName) { if (alvo.tagName === "SCRIPT") mostrar("Arquivo não encontrado ou bloqueado: " + (alvo.src || "biblioteca do Firebase")); }
+    if (alvo && alvo !== window && alvo.tagName) { if (alvo.tagName === "SCRIPT") mostrar("Arquivo não encontrado ou bloqueado: " + (alvo.src || "js/app.js ou js/firebase-config.js")); }
     else if (e.message) mostrar("Erro: " + e.message + (e.filename ? " (" + e.filename.split("/").slice(-2).join("/") + ")" : ""));
   }, true);
   window.addEventListener("unhandledrejection", function (e) { mostrar("Erro: " + ((e.reason && (e.reason.message || e.reason.code)) || e.reason)); });
@@ -400,6 +400,11 @@ img{max-width:100%}
       <div class="msg" id="msgLogin" role="status"></div>
       <button type="button" class="linkbtn" id="btnEsqueci" style="align-self:center">Esqueci minha senha</button>
     </form>
+    <div class="aviso" style="display:flex;flex-direction:column;gap:6px">
+      <strong>Versão de teste, sem Firebase</strong>
+      <span>Os dados ficam só neste navegador. Administrador: usuário <b>admin</b>, senha <b>admin123</b>. Abra outra aba para entrar como verificador ao mesmo tempo.</span>
+      <button type="button" class="linkbtn" id="btnZerar" style="align-self:flex-start">Apagar todos os dados de teste</button>
+    </div>
     <p class="login-rodape">O acesso é criado pelo administrador do checklist.</p>
   </div>
 </main>
@@ -606,44 +611,93 @@ img{max-width:100%}
 // =====================================================================
 //  CHECKLIST ASBEMGE — aplicação (Firebase Authentication + Firestore)
 // =====================================================================
-import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
-  createUserWithEmailAndPassword, sendPasswordResetEmail, updatePassword,
-  EmailAuthProvider, reauthenticateWithCredential
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import {
-  getFirestore, collection, doc, getDoc, setDoc, updateDoc, onSnapshot,
-  query, where, writeBatch, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-// ---- Configuração do Firebase ----
-// =====================================================================
-//  CONFIGURAÇÃO DO CHECKLIST ASBEMGE
-//  Preencha os dados abaixo seguindo o arquivo LEIAME.md
-// =====================================================================
-
-// 1) Configuração do projeto Firebase (já preenchida)
-//    (Console do Firebase → Configurações do projeto → Seus apps → App da Web)
-const firebaseConfig = {
-  apiKey: "AIzaSyBGj7riAJGkunTICYEY6whooZk8lZk84Dg",
-  authDomain: "checklist-asbemge.firebaseapp.com",
-  projectId: "checklist-asbemge",
-  storageBucket: "checklist-asbemge.firebasestorage.app",
-  messagingSenderId: "425903985926",
-  appId: "1:425903985926:web:fb06901e680866691d7a87"
-};
-
-// 2) E-mail do administrador (o mesmo que você colocar no arquivo firestore.rules).
-//    Crie esse usuário em Authentication → Users → Adicionar usuário.
-//    Pode haver mais de um: ["admin@asbemge.com.br", "outro@asbemge.com.br"]
+// ===================== VERSÃO DE TESTE: SEM FIREBASE =====================
+// Os dados ficam guardados só neste navegador (localStorage).
+// Cada aba do navegador pode ter um login diferente (ex.: admin numa aba, verificador em outra).
+const CHAVE = "checklist-asbemge-teste";
+const firebaseConfig = {};
 const ADMIN_EMAILS = ["admin@checklist.asbemge"];
-
-// 3) Domínio interno usado para os logins dos verificadores.
-//    Quando o administrador cria o usuário "joao", o sistema registra
-//    "joao@<DOMINIO_LOGIN>" no Firebase. Nenhum e-mail é enviado para ele.
-//    Não precisa mudar. Se mudar depois, os logins antigos param de funcionar.
 const DOMINIO_LOGIN = "checklist.asbemge";
-
+const G = (() => {
+  let d = null; try { d = JSON.parse(localStorage.getItem(CHAVE)); } catch (e) {}
+  if (!d) d = { users: { "admin@checklist.asbemge": { uid: "uADMIN", senha: "admin123" } }, store: {} };
+  return { users: d.users, store: d.store, listeners: [], authL: [] };
+})();
+const salvarLocal = () => { try { localStorage.setItem(CHAVE, JSON.stringify({ users: G.users, store: G.store })); } catch (e) {} };
+const emit = () => { for (const l of G.listeners.slice()) l.fire(); };
+const gravarEEmitir = () => { salvarLocal(); emit(); };
+window.addEventListener("storage", e => {
+  if (e.key !== CHAVE) return;
+  try { const d = JSON.parse(e.newValue); if (d) { G.users = d.users; G.store = d.store; emit(); } } catch (err) {}
+});
+const idNovo = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const copia = o => JSON.parse(JSON.stringify(o));
+function initializeApp(cfg, name) { return { name: name || "main" }; }
+async function deleteApp() {}
+const auths = {};
+function getAuth(app) {
+  const n = app ? app.name : "main";
+  if (!auths[n]) {
+    let cur = null;
+    if (n === "main") { try { cur = JSON.parse(sessionStorage.getItem(CHAVE + "-sessao")); } catch (e) {} }
+    auths[n] = { name: n, currentUser: cur };
+  }
+  return auths[n];
+}
+function onAuthStateChanged(a, cb) { G.authL.push(cb); setTimeout(() => cb(a.currentUser), 0); return () => {}; }
+const setCur = (a, u) => {
+  a.currentUser = u;
+  if (a.name === "main") { try { u ? sessionStorage.setItem(CHAVE + "-sessao", JSON.stringify(u)) : sessionStorage.removeItem(CHAVE + "-sessao"); } catch (e) {} G.authL.forEach(f => f(u)); }
+};
+async function signInWithEmailAndPassword(a, email, senha) {
+  const u = G.users[email]; if (!u || u.senha !== senha) throw { code: "auth/invalid-credential" };
+  setCur(a, { uid: u.uid, email }); return { user: a.currentUser };
+}
+async function signOut(a) { setCur(a, null); }
+async function createUserWithEmailAndPassword(a, email, senha) {
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw { code: "auth/invalid-email" };
+  if (G.users[email]) throw { code: "auth/email-already-in-use" };
+  if (senha.length < 6) throw { code: "auth/weak-password" };
+  const uid = "u" + idNovo(); G.users[email] = { uid, senha }; salvarLocal(); setCur(a, { uid, email }); return { user: { uid, email } };
+}
+async function sendPasswordResetEmail() { throw { message: "Na versão de teste não há envio de e-mail." }; }
+async function updatePassword(u, nova) { G.users[u.email].senha = nova; salvarLocal(); }
+const EmailAuthProvider = { credential: (email, senha) => ({ email, senha }) };
+async function reauthenticateWithCredential(u, c) { if (!G.users[c.email] || G.users[c.email].senha !== c.senha) throw { code: "auth/invalid-credential" }; }
+function getFirestore() { return {}; }
+function collection(db, path) { return { kind: "col", path }; }
+function doc(a, b, c) {
+  if (a && a.kind === "col") { const id = idNovo(); return { kind: "doc", path: a.path + "/" + id, id }; }
+  return { kind: "doc", path: b + "/" + c, id: c };
+}
+function where(f, op, v) { return { f, op, v }; }
+function query(col, ...ws) { return { kind: "col", path: col.path, ws }; }
+const serverTimestamp = () => new Date().toISOString();
+const colDocs = q => Object.entries(G.store)
+  .filter(([p]) => p.startsWith(q.path + "/") && p.split("/").length === 2)
+  .filter(([, d]) => (q.ws || []).every(w => d[w.f] === w.v))
+  .map(([p, d]) => ({ id: p.split("/")[1], data: () => copia(d) }));
+async function getDoc(r) { const d = G.store[r.path]; return { exists: () => !!d, data: () => d && copia(d), id: r.id }; }
+async function setDoc(r, data) { G.store[r.path] = copia(data); gravarEEmitir(); }
+async function updateDoc(r, data) { if (!G.store[r.path]) throw { message: "Registro não encontrado." }; Object.assign(G.store[r.path], copia(data)); gravarEEmitir(); }
+function writeBatch() {
+  const ops = [];
+  return {
+    set: (r, d) => ops.push(["set", r, d]), update: (r, d) => ops.push(["upd", r, d]),
+    commit: async () => { for (const [t, r, d] of ops) { if (t === "set") G.store[r.path] = copia(d); else Object.assign(G.store[r.path], copia(d)); } gravarEEmitir(); }
+  };
+}
+function onSnapshot(ref, next) {
+  const l = { fire: () => {
+    if (ref.kind === "doc") { const d = G.store[ref.path]; next({ exists: () => !!d, data: () => d && copia(d), id: ref.id }); }
+    else next({ docs: colDocs(ref) });
+  } };
+  G.listeners.push(l); setTimeout(l.fire, 0);
+  return () => { G.listeners = G.listeners.filter(x => x !== l); };
+}
+// botão para zerar os dados de teste (tela de login)
+window.__apagarTeste = () => { try { localStorage.removeItem(CHAVE); sessionStorage.removeItem(CHAVE + "-sessao"); } catch (e) {} location.reload(); };
+// ===================== FIM DA CAMADA DE TESTE =====================
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -889,7 +943,9 @@ const ativos = () => state.itens.filter(i => !i.excluido);
 const CARGOS = { coordenador: "Coordenador", diretoria: "Diretoria", verificador: "Verificador", admin: "Administrador" };
 const ORDEM_CARGO = { coordenador: 1, diretoria: 2, verificador: 3 };
 const ACESSO_TOTAL = ["admin", "coordenador", "diretoria"];
-const verificadoresAtivos = () => state.usuarios.filter(u => u.papel === "verificador" && u.ativo).sort((a, b) => (a.nome || "").localeCompare(b.nome || "", "pt-BR"));
+// quem pode receber itens para verificar: verificadores e coordenadores
+const RECEBEM_ITENS = ["verificador", "coordenador"];
+const verificadoresAtivos = () => state.usuarios.filter(u => RECEBEM_ITENS.includes(u.papel) && u.ativo && !u.substituidoPor).sort((a, b) => (a.nome || "").localeCompare(b.nome || "", "pt-BR"));
 
 function render() {
   hoje = hojeStr();
@@ -913,7 +969,8 @@ function render() {
   }, "Nenhum item vencido.");
   fill("#colFw", fw, it => {
     const atras = it.prazo && diffDias(hoje, it.prazo) < 0;
-    return [state.admin ? h("span", { class: "who" }, "Com ", h("strong", null, it.verificadorNome || "—")) : h("span", { class: "who" }, perTxt(it)),
+    const comigo = state.admin && it.verificadorId === state.perfil.id;
+    return [state.admin ? h("span", { class: "who" }, "Com ", h("strong", null, comigo ? "você" : (it.verificadorNome || "—"))) : h("span", { class: "who" }, perTxt(it)),
       it.prazo ? h("span", { class: "pill " + (atras ? "late" : "fw") }, (atras ? "Prazo vencido " : "Prazo ") + fmt(it.prazo).slice(0, 5)) : null];
   }, state.admin ? "Nenhum item encaminhado." : "Nenhuma verificação pendente para você.");
   fill("#colAp", ap, it => [h("span", { class: "who" }, "Feito por ", h("strong", null, it.verificadoPor || it.verificadorNome || "—")),
@@ -992,7 +1049,7 @@ function etapa(it, f) {
     const m = h("div", { class: "msg", role: "status" });
     const vs = verificadoresAtivos();
     const sel = h("select", { id: "eResp" }, h("option", { value: "" }, vs.length ? "Selecione o verificador" : "Nenhum verificador cadastrado"),
-      vs.map(v => h("option", { value: v.id, selected: v.id === it.verificadorId }, v.nome + (v.setor ? " — " + v.setor : ""))));
+      vs.map(v => h("option", { value: v.id, selected: v.id === it.verificadorId }, v.nome + (v.papel === "coordenador" ? " (Coordenador)" : "") + (v.setor ? " — " + v.setor : ""))));
     const pz = h("input", { type: "date", id: "ePrazo", value: somar(hoje, 7, "dias"), min: hoje });
     const ins = h("textarea", { id: "eIns", placeholder: "Orientações para esta verificação (opcional)" });
     const btn = h("button", { class: "btn primary", type: "submit" }, "Encaminhar");
@@ -1263,7 +1320,7 @@ function desenharVerif(forcar) {
   const cargo = h("select", { id: "vCargo", disabled: eu },
     ["verificador", "coordenador", "diretoria"].map(c => h("option", { value: c, selected: (ed ? ed.papel : "verificador") === c }, CARGOS[c])));
   const dicaCargo = h("span", { class: "hint" });
-  const atualizaDica = () => { dicaCargo.textContent = eu ? "Você não pode mudar o próprio cargo." : cargo.value === "verificador" ? "Vê só os itens encaminhados a ele. Não acessa Administração nem Relatórios." : "Acesso a tudo: tela principal, Administração e Relatórios."; };
+  const atualizaDica = () => { dicaCargo.textContent = eu ? "Você não pode mudar o próprio cargo." : cargo.value === "verificador" ? "Vê só os itens encaminhados a ele. Não acessa Administração nem Relatórios." : cargo.value === "coordenador" ? "Acesso a tudo e também pode receber itens para verificar." : "Acesso a tudo: tela principal, Administração e Relatórios."; };
   cargo.addEventListener("change", atualizaDica); atualizaDica();
   const btn = h("button", { class: "btn primary", type: "submit" }, ed ? "Salvar alterações" : "Criar acesso");
   const chkTroca = h("input", { type: "checkbox", id: "vTroca", checked: true });
@@ -1327,7 +1384,7 @@ function desenharVerif(forcar) {
   })) : h("p", { class: "note" }, "Nenhum usuário cadastrado ainda.");
 
   box.replaceChildren(
-    h("p", { class: "note" }, "Cada pessoa entra com usuário e senha próprios. Coordenador e Diretoria têm acesso a tudo. Verificador vê apenas os itens encaminhados a ele."),
+    h("p", { class: "note" }, "Cada pessoa entra com usuário e senha próprios. Coordenador e Diretoria têm acesso a tudo, e o Coordenador também pode receber itens para verificar. Verificador vê apenas os itens encaminhados a ele."),
     form,
     h("div", { style: "display:flex;flex-direction:column;gap:8px" }, h("div", { class: "lbl" }, "Cadastrados (" + lista.length + ")"), ul));
 }
@@ -1414,7 +1471,7 @@ function abrirRel() {
 }
 $("#dlgR").addEventListener("close", () => { if (state.subEventos) { state.subEventos(); state.subEventos = null; } });
 function preencherFiltros() {
-  const vs = new Set(state.usuarios.filter(u => u.papel === "verificador" && !u.substituidoPor).map(u => u.nome));
+  const vs = new Set(state.usuarios.filter(u => RECEBEM_ITENS.includes(u.papel) && !u.substituidoPor).map(u => u.nome));
   for (const e of state.eventos) if (e.verificadorNome) vs.add(e.verificadorNome);
   const vSel = $("#rVerif"), atualV = vSel.value;
   vSel.replaceChildren(h("option", { value: "" }, "Todos os verificadores"), [...vs].sort((a, b) => a.localeCompare(b, "pt-BR")).map(n => h("option", { value: n }, n)));
@@ -1563,6 +1620,13 @@ $("#btnImprimir").addEventListener("click", () => window.print());
 
 // atualiza "hoje" e os vencimentos quando o dia muda com a página aberta
 setInterval(() => { if (hojeStr() !== hoje && state.perfil) render(); }, 60000);
+
+// versão de teste: apagar dados (com confirmação)
+$("#btnZerar").addEventListener("click", e => {
+  const b = e.currentTarget;
+  if (b.dataset.ok !== "1") { b.dataset.ok = "1"; b.textContent = "Toque de novo para confirmar: apagar tudo"; return; }
+  window.__apagarTeste();
+});
 
 </script>
 </body>
